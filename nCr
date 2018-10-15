@@ -1,0 +1,23 @@
+#lists combinations of nCr, choosing r items out of a list of n items, with n > r > 1
+n = 8
+r = 3
+items = list(range(n)) #sorted list
+combos = list(range(r))
+for ri in range(r):
+    combos[ri] = items[ri]
+    # still need to adapt rest of code to work with items instead of itemindex
+ri = -1
+ct = 0
+while combos[ri] < n:
+    for i in range(combos[ri], n):
+        combos[ri] = i
+        ct += 1
+        print(ct, combos)
+    ri -= 1
+    while combos[ri] + 1 == combos[ri + 1]:
+        if ri == -r: break
+        ri -= 1
+    combos[ri] += 1
+    while ri < -1:
+        ri += 1
+        combos[ri] = combos[ri - 1] + 1
