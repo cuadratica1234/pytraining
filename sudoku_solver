@@ -1,0 +1,316 @@
+###   SUDOKU SOLVER   ########################################################################
+# Ricardo Villalobos, MX
+# Nov 2018
+# Works on a general 'solved' matrix populated with all 9 digits, to which it loads the puzzle
+# by removing marked cells.
+# Removes non-feasible numbers in four ways:
+#	1. Hard constrains, the number is confirmed in another cell of the row/column/region.
+#	2. Frequency count, by elimination, a number is only feasible in one cell of the
+#		row/column/region.
+#	3. Line binds, a number is only feasible in one row/column of a given region, or
+#		--the reciprocal--in one region of a given row/column.
+#	4. Multi-cell binds, two or more cells of a given row/column/region share the same feasible 
+#		number set, therefore the set cannot be in other cells of the row/column/region.
+#	5. //not yet implemented// Implicit multi-cell binds, same as step 4, with neither cell
+#		containing the full shared set.
+
+import pprint
+from time import sleep, time
+
+###   SOURCE DATA   ##########################################################################
+# To input puzzles as nested lists, with 0 len strings for missing numbers
+
+medium_puzzle = [['','', 2,'','', 8,'','',''],
+				 [ 8, 6,'', 5,'','', 2, 1,''],
+				 [ 1, 7,'', 2, 4, 9,'','',''],
+				 [ 4,'', 1,'','','','','',''],
+				 ['', 9, 6,'','','', 8, 5,''],
+				 ['','','','','','', 1,'', 6],
+				 ['','','', 7, 3, 2,'', 6, 8],
+				 ['', 5, 8,'','', 1,'', 9, 2],
+				 ['','','', 8,'','', 4,'','']]
+
+hard_puzzle =   [[ 5,'', 3,'','', 2,'', 1,''],
+			     ['','', 4, 8,'','','', 6,''],
+			     ['','','','','', 9, 4,'', 3],
+			     ['','','','','', 6,'', 2,''],
+			     [ 3, 6,'','','','','', 4, 7],
+			     ['', 4,'', 7,'','','','',''],
+			     [ 8,'', 7, 9,'','','','',''],
+			     ['', 2,'','','', 7, 9,'',''],
+			     ['', 9,'', 3,'','', 1,'', 8]]
+
+evil_puzzle =   [['','','','', 9, 8, 6,'',''],
+			     ['','', 8,'','', 5,'', 2,''],
+			     ['', 9,'', 4,'','','','', 8],
+			     [ 1,'','','', 6,'', 9,'',''],
+			     [ 9,'','','','','','','', 4],
+			     ['','', 5,'', 3,'','','', 1],
+			     [ 4,'','','','', 1,'', 3,''],
+			     ['', 5,'', 8,'','', 7,'',''],
+			     ['','', 3, 6, 7,'','','','']]
+
+blank_puzzle =  [['','','','','','','','',''],
+			     ['','','','','','','','',''],
+			     ['','','','','','','','',''],
+			     ['','','','','','','','',''],
+			     ['','','','','','','','',''],
+			     ['','','','','','','','',''],
+			     ['','','','','','','','',''],
+			     ['','','','','','','','',''],
+			     ['','','','','','','','','']]
+				 
+puzzle = evil_puzzle				 
+
+###   FUNCTIONS   ############################################################################
+def loop_strike(digit, pivoti, pivotj):
+	regioni, regionrow = divmod(pivoti, 3)
+	regionj, regioncol = divmod(pivotj, 3)
+	### update counts, sets
+	digitct[digit] += 1
+	ict[pivoti] += 1
+	jct[pivotj] += 1
+	isets[pivoti].add(digit)
+	jsets[pivotj].add(digit)
+	regionsets[regioni][regionj].add(digit)
+	### strike digit from rows, cols & regions, discount digit frequency
+	strikect = 0
+	for strikei in range(9):
+		sregioni = strikei // 3
+		for strikej in range(9):
+			sregionj = strikej // 3
+			if sregioni == regioni and sregionj == regionj:
+				if (strikei != pivoti or strikej != pivotj) and digit in solved[strikei][strikej]:
+					strikect += strike([digit], strikei, strikej)
+			else:
+				if strikei == pivoti and digit in solved[strikei][strikej]:
+					strikect += strike([digit], strikei, strikej)
+				if strikej == pivotj and digit in solved[strikei][strikej]:
+					strikect += strike([digit], strikei, strikej)
+	dirty[pivoti][pivotj] = False
+	return strikect
+	
+def strike(digit, strikei, strikej):
+	strikect = 1
+	for sdigit in digit:
+		if sdigit in solved[strikei][strikej]:
+			solved[strikei][strikej].remove(sdigit)
+			dirty[strikei][strikej] = True
+			dfreqi[strikei][sdigit] -= 1
+			dfreqj[strikej][sdigit] -= 1
+			dfreqregion[strikei // 3][strikej // 3][sdigit] -= 1
+			strikect = 1
+	return strikect
+	
+def loop_dirty():
+	laps = 0	
+	while sum(True in dirtyi for dirtyi in dirty) > 0:
+		laps += 1
+		for pivoti in range(9):
+			for pivotj in range(9):
+				if dirty[pivoti][pivotj]:
+					dirty[pivoti][pivotj] = False
+					if len(solved[pivoti][pivotj]) == 1:
+						loop_strike(solved[pivoti][pivotj][0], pivoti, pivotj)
+
+def loop_freq():
+	### check all cells by rows, cols & regions, find digits with only one feasible cell
+	freq_strike = True
+	freq_laps = 0
+	while freq_strike:
+		freq_strike = False
+		freq_laps += 1
+		for digit in range(1, 10):
+			for pivoti in range(9):
+				if digit not in isets[pivoti] and dfreqi[pivoti][digit] == 1:
+					pivotj = [solved[pivoti].index(solvedj) for solvedj in solved[pivoti] if digit in solvedj][0]
+					strip_cell(digit, pivoti, pivotj)
+					freq_strike = True
+			for pivotj in range(9):
+				if digit not in jsets[pivotj] and dfreqj[pivotj][digit] == 1:
+					solvedj = [solved[pivoti][pivotj] for pivoti in range(9)]
+					pivoti = [solvedj.index(solvedji) for solvedji in solvedj if digit in solvedji][0]
+					strip_cell(digit, pivoti, pivotj)
+					freq_strike = True
+			for regioni in range(3):
+				for regionj in range(3):
+					if digit not in regionsets[regioni][regionj] and \
+								dfreqregion[regioni][regionj][digit] == 1:
+						pivoti = regioni * 3
+						for pivoti in range(pivoti, pivoti + 3):
+							pivotj = regionj * 3
+							for pivotj in range(pivotj, pivotj + 3):
+								if digit in solved[pivoti][pivotj]: break
+							if digit in solved[pivoti][pivotj]: break
+						strip_cell(digit, pivoti, pivotj)
+						freq_strike = True
+		loop_dirty()
+
+def find_line_binds():
+	### find digits that:
+	### 	a) are feasible in only one row/col of a given region
+	###		b) are feasible only in one region for a given row/col
+	line_binds_dirty = True
+	while line_binds_dirty:
+		line_binds_dirty = False
+		### check regions, find single-line digits
+		for regioni in range(3):
+			for regionj in range(3):
+				for digit in range(1, 10):
+					freq = dfreqregion[regioni][regionj][digit]
+					if 1 < freq <= 3:
+						pivoti = regioni * 3
+						for pivoti in range(pivoti, pivoti + 3):
+							pivotj, linefreq = regionj * 3, 0
+							for pivotj in range(pivotj, pivotj + 3):
+								if digit in solved[pivoti][pivotj]: linefreq += 1
+							if linefreq > 0: break
+						if freq == linefreq:
+							strikei, strikect = pivoti, 0
+							for strikej in range(9):
+								if strikej // 3 != regionj and digit in solved[strikei][strikej]:
+									strikect += strike([digit], strikei, strikej)
+							if strikect > 0: line_binds_dirty = True
+						else:
+							pivotj = regionj * 3
+							for pivotj in range(pivotj, pivotj + 3):
+								pivoti = regioni * 3
+								linefreq = 0
+								for pivoti in range(pivoti, pivoti + 3):
+									if digit in solved[pivoti][pivotj]: linefreq += 1
+								if linefreq > 0: break
+							if freq == linefreq:
+								strikej, strikect = pivotj, 0
+								for strikei in range(9):
+									if strikei // 3 != regioni and digit in solved[strikei][strikej]:
+										strikect += strike([digit], strikei, strikej)
+								if strikect > 0: line_binds_dirty = True
+		### check lines, find single-region digits
+		for pivoti in range(9):
+			for digit in range(1, 10):
+				freq = dfreqi[pivoti][digit]
+				if 1 < freq <= 3:
+					regionpivotset = set()
+					for pivotj in range(9):
+						if digit in solved[pivoti][pivotj]: regionpivotset.add(pivotj // 3)
+					if len(regionpivotset) == 1:
+						strikei, regionj, strikect = pivoti, regionpivotset.pop(), 0
+						for strikej in range(9):
+							if strikej // 3 != regionj and digit in solved[strikei][strikej]:
+								strikect += strike([digit], strikei, strikej)
+		for pivotj in range(9):
+			for digit in range(1, 10):
+				freq = dfreqj[pivotj][digit]
+				if 1 < freq <= 3:
+					regionpivotset = set()
+					for pivoti in range(9):
+						if digit in solved[pivoti][pivotj]: regionpivotset.add(pivoti // 3)
+					if len(regionpivotset) == 1:
+						strikej, regioni, strikect = pivotj, regionpivotset.pop(), 0
+						for strikei in range(9):
+							if strikei // 3 != regioni and digit in solved[strikei][strikej]:
+								strikect += strike([digit], strikei, strikej)
+	loop_dirty()
+	loop_freq()
+
+def find_multicell():
+	multi_laps = 0
+	multicell_dirty = True
+#	while multicell_dirty:		### pending, dirty not working
+	while multi_laps == 0:
+		multicell_dirty = False
+		### check regions, find cells with same digits
+		for regioni in range(3):
+			for regionj in range(3):
+				pivoti, pivotj = regioni * 3, regionj * 3
+				for celli in range(pivoti, pivoti + 3):
+					for cellj in range(pivotj, pivotj + 3):
+						cellfreq = 0
+						for strikei in range(celli, pivoti + 3):
+							for strikej in range(cellj, pivotj + 3):
+								if solved[celli][cellj] == solved[strikei][strikej]: cellfreq += 1
+						if cellfreq == len(solved[celli][cellj]):
+							strikect = 0
+							for strikei in range(pivoti, pivoti + 3):
+								for strikej in range(pivotj, pivotj + 3):
+									if solved[celli][cellj] != solved[strikei][strikej]:
+										strikect += strike(solved[celli][cellj], strikei, strikej)
+							if strikect > 0: multicell_dirty = True
+		### check lines, find cells with same digits
+		for pivoti in range(9):
+			for pivotj in range(9):
+				cellfreq = 0
+				for cellj in range(pivotj, 9):
+					if solved[pivoti][pivotj] == solved[pivoti][cellj]: cellfreq += 1
+				if cellfreq == len(solved[pivoti][pivotj]):
+					strikei, strikect = pivoti, 0
+					for strikej in range(9):
+						if solved[pivoti][pivotj] != solved[strikei][strikej]:
+							strikect += strike(solved[pivoti][pivotj], strikei, strikej)
+					if strikect > 0: multicell_dirty = True
+		for pivotj in range(9):
+			for pivoti in range(9):
+				cellfreq = 0
+				for celli in range(pivoti, 9):
+					if solved[pivoti][pivotj] == solved[celli][pivotj]: cellfreq += 1
+				if cellfreq == len(solved[pivoti][pivotj]):
+					strikej, strikect = pivotj, 0
+					for strikei in range(9):
+						if solved[pivoti][pivotj] != solved[strikei][strikej]:
+							strikect += strike(solved[pivoti][pivotj], strikei, strikej)
+					if strikect > 0: multicell_dirty = True
+		multi_laps += 1
+	loop_dirty()
+	loop_freq()
+	
+def strip_cell(digit, pivoti, pivotj):
+	#remove non-feasible digits from cell
+	for sdigit in range(1, 10):
+		if sdigit != digit and sdigit in solved[pivoti][pivotj]:
+			dfreqi[pivoti][sdigit] -= 1
+			dfreqj[pivotj][sdigit] -= 1
+			dfreqregion[pivoti // 3][pivotj // 3][sdigit] -= 1
+			solved[pivoti][pivotj].remove(sdigit)
+	loop_strike(digit, pivoti, pivotj)
+		
+def print_result(t0):
+#	pprint.pprint(isets)
+#	pprint.pprint(jsets)
+#	pprint.pprint(regionsets)
+#	pprint.pprint(dfreqi)
+#	print(sum([sum(x) for x in dfreqi]))
+#	pprint.pprint(dfreqj)
+#	print(sum([sum(x) for x in dfreqj]))
+#	pprint.pprint(dfreqregion)
+#	print(sum([sum(x) for x in dfreqregion]))
+#	pprint.pprint(dirty)
+#	print(digitct)
+	print('\n {} cells confirmed, {:.3f} seconds \n'.format(sum(digitct), time() - t0))
+	for pivoti in range(9):
+		print([cell[0] for cell in solved[pivoti]])
+#	pprint.pprint(solved)
+
+###   PROGRAM   #############################################################################
+t0 = time()
+digitct = [0 for digit in range(10)]
+ict = [0 for pivoti in range(9)]
+jct = [0 for pivotj in range(9)]
+dfreqi = [[9 if digit > 0 else 0 for digit in range(10)] for pivoti in range(9)]
+dfreqj = [[9 if digit > 0 else 0 for digit in range(10)] for pivotj in range(9)]
+dfreqregion = [[[9 if digit > 0 else 0 for digit in range(10)]
+					for regionj in range(3)] for regioni in range(3)]
+isets = [set() for pivoti in range(9)]
+jsets = [set() for pivotj in range(9)]
+regionsets = [[set() for regionj in range(3)] for regioni in range(3)]
+dirty = [[False for pivotj in range(9)] for pivoti in range(9)]
+solved = [[[digit for digit in range(1, 10)] for pivotj in range(9)] for pivoti in range(9)]
+for pivoti in range(9):
+	for pivotj in range(9):
+		if puzzle[pivoti][pivotj] != '':
+			digit = puzzle[pivoti][pivotj]
+			strip_cell(digit, pivoti, pivotj)
+loop_dirty()
+loop_freq()
+find_line_binds()
+find_multicell()
+print_result(t0)
