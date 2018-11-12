@@ -1,5 +1,5 @@
 def nCr(items, r):
-	# lists combinations of nCr, choosing r items out of a list of n items, with n > r > 1
+	#lists combinations of nCr, choosing r items out of a list of n items, with n > r > 1
 	n, comboj = len(items), -1
 	combos = [[]]
 	for itemj in range(r):
@@ -8,7 +8,9 @@ def nCr(items, r):
 		for itemj in range(itemj, n):
 			combos[-1][comboj] = items[itemj]
 #			print('{} {}'.format(len(combos), combos[-1]))
-			combos.append(combos[-1])
+			combos.append([])
+			for comboitem in combos[-2]:
+				combos[-1].append(comboitem)
 		### setup next iteration
 		comboj = -2
 		itemj = items.index(combos[-1][comboj]) + 1
@@ -23,14 +25,17 @@ def nCr(items, r):
 				combos[-1][comboj] = items[itemj]
 		else:
 			itemj = n
+			del combos[-1]
 	return combos
 	
 
 	
 	
 ### TEST ###
+from pprint import pprint
 items = ['a', 'b', 'c', 'd', 'e', 'f']
 #items = list(range(6))
 r = 4
 
-nCr(items, r)
+#nCr(items, r)
+pprint(nCr(items, r))
