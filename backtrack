@@ -1,0 +1,34 @@
+def is_merge(s, part1, part2):
+    options = []
+    track = []
+    build = []
+    i = i1 = i2 = 0
+    while 0 <= i < len(s):
+        options.append([])
+        track.append((i1, i2))
+        if i1 < len(part1) and s[i] == part1[i1]:
+            options[-1].append(1)
+        if i2 < len(part2) and s[i] == part2[i2]:
+            options[-1].append(2)
+        while options:
+            if options[-1]:
+                op = options[-1].pop()
+                i += 1
+                if op == 1:
+                    build.append(part1[i1])
+                    i1 += 1
+                else:
+                    build.append(part2[i2])
+                    i2 += 1
+                break
+            else:
+                options.pop()
+                track.pop()
+                i -= 1
+                if build:
+                    build.pop()
+                    i1, i2 = track[-1]
+    if s == ''.join(build) and i1 == len(part1) and i2 == len(part2):
+        return True
+    else:
+        return False
