@@ -30,12 +30,11 @@ def nCr(items, r):
 	
 
 	
-	
+"""	
 ### TEST ###
 from pprint import pprint
 items = ['a', 'b', 'c', 'd', 'e', 'f']
 #items = list(range(6))
 r = 4
-
-#nCr(items, r)
 pprint(nCr(items, r))
+"""
