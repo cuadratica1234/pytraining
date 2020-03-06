@@ -1,40 +1,36 @@
-def nCr(items, r):
-	#lists combinations of nCr, choosing r items out of a list of n items, with n > r > 1
-	n, comboj = len(items), -1
-	combos = [[]]
-	for itemj in range(r):
-		combos[-1].append(items[itemj])
-	while itemj < n:
-		for itemj in range(itemj, n):
-			combos[-1][comboj] = items[itemj]
-#			print('{} {}'.format(len(combos), combos[-1]))
-			combos.append([])
-			for comboitem in combos[-2]:
-				combos[-1].append(comboitem)
-		### setup next iteration
-		comboj = -2
-		itemj = items.index(combos[-1][comboj]) + 1
-		while comboj > -r and itemj == items.index(combos[-1][comboj + 1]):
-			comboj -= 1
-			itemj = items.index(combos[-1][comboj]) + 1
-		if itemj - comboj <= n:
-			combos[-1][comboj] = items[itemj]
-			while comboj < -1:
-				comboj += 1
-				itemj += 1
-				combos[-1][comboj] = items[itemj]
-		else:
-			itemj = n
-			del combos[-1]
-	return combos
-	
+def nCr_generator(items=[], r=1):
+    ### generator for all combinations of nCr
+    ### choosing r items out of a list of n items without replacement
+    ### expects: items as sequence, r as int
+    ###             len(items) >= r > 1
+    ##############################################
+    n = len(items)
+    combo_ks = list(range(r))
+    ### initialize list with first r items
+    combo_list = items[:r]
+    k = r - 1
+    while k < n:
+        ### yield all combinations changing only the last position
+        for itemk in items[k:]:
+            combo_list[-1] = itemk
+            yield combo_list
+	### setup next iteration
+        ### starting from second-to-last position (j),
+        ### select if still can step-up by one
+        j = 2
+        while j < r and combo_ks[-j] + j >= n:
+            j += 1
+        ### change list from selected position
+        k = combo_ks[-j] + 1
+        combo_ks[-j:] = list(range(k, k + j))
+        if k + j <= n:
+            combo_list[-j:] = items[k:k + j]
+        k = combo_ks[-1]
 
-	
-"""	
-### TEST ###
-from pprint import pprint
-items = ['a', 'b', 'c', 'd', 'e', 'f']
-#items = list(range(6))
-r = 4
-pprint(nCr(items, r))
-"""
+### test ###
+i = 0
+for c in nCr_generator(list('abcdefg'), 4):
+    print(c)
+    i += 1
+print(i)
+raise SystemExit
